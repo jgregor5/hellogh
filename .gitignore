@@ -1,0 +1,22 @@
+# Document de treball intern: conté la topologia de la infraestructura del
+# centre (hosts, IPs, usuaris) i no s'ha de publicar en un repositori públic.
+PLAN.md
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+
+# Environment
+.env
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+
+# IDE
+.vscode/
+*.code-workspace
+.DS_Store
+Thumbs.db
