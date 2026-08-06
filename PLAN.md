@@ -30,7 +30,7 @@
 | Màquina local | Ubuntu 26.04 LTS. `docker` ✅ `git` ✅ `make` ✅ `curl` ✅ `jq` ✅ `python3` ✅ (pyenv) `gh` ✅ (2.97.0, a `/usr/bin/gh`) |
 | Host lockdebian | Àlies SSH **`cicdies`**, a la LAN del centre. Els playbooks hi apunten amb `hosts: ciserver`, definit a `inventories/common.yaml` |
 | Altres àlies SSH | `gities` i `ops` → `<host-gitolite>` (gitolite / verbs d'ops). **No hi ha àlies per al VPS** |
-| VPS | `<host-vps>`, Debian 13. Caddy (wildcard `*.ies.jg5.dev`) + frps. **No el gestiona Ansible** i **aquest projecte no el toca** |
+| VPS | `<host-vps>`, Debian 13. Caddy (certificat wildcard `<domini-comodí>`) + frps. **No el gestiona Ansible** i **aquest projecte no el toca** |
 
 > **Marcadors.** `<arrel>`, `<host-gitolite>` i `<host-vps>` són marcadors: els valors reals
 > (rutes, IPs, usuaris i ports) són a `INFRA.local.md`, que està al `.gitignore` perquè aquest
@@ -83,8 +83,8 @@ Aquest fitxer és `ansible/hellogh/PLAN.md`.
 5. **`cicd-cleanup.sh` és compatible.** Itera sobre *tots* els contenidors en marxa i fa
    `docker image prune -a -f`, però les imatges d'un contenidor **en marxa** queden exemptes. Les
    `:v1.0.0` antigues es recullen després d'un desplegament nou, que és el que volem.
-6. **El VPS ja ho té tot per exposar `hellogh.ies.jg5.dev`.** El registre A comodí `*.ies` i el
-   certificat wildcard `*.ies.jg5.dev` de Caddy ja cobreixen qualsevol subdomini nou. **Zero canvis
+6. **El VPS ja ho té tot per exposar `<domini-app>`.** El registre A comodí i el
+   certificat wildcard `<domini-comodí>` de Caddy ja cobreixen qualsevol subdomini nou. **Zero canvis
    al VPS.**
 7. **Convencions exactes de `mlops`** (comprovades): `FROM python:3.13-slim AS base`; capçaleres
    `# ==================== BASE STAGE ====================`; etapes `base` → `test` → `production`;
@@ -161,7 +161,7 @@ grup d'alumnes i exposat pel **mateix frpc + frps + Caddy**. Conseqüències:
 - **El VPS `<host-vps>` no es toca gens.** Cap usuari `deploy`, cap Docker, cap bloc al Caddyfile,
   cap SSH entrant. La màquina que termina el TLS de tots els alumnes no s'exposa més.
 - **La comparació té una sola variable.** Mateix contenidor, mateix Docker, mateix frpc, mateix
-  Caddy, mateix `*.ies.jg5.dev`, mateix aïllament. L'**única** diferència és qui porta el codi.
+  Caddy, mateix `<domini-comodí>`, mateix aïllament. L'**única** diferència és qui porta el codi.
 - **`GITHUB.md` §12 passa de ser una afirmació a ser observable**: FRP i Caddy es queden igual;
   Actions només substitueix el transport del codi.
 
@@ -523,7 +523,7 @@ que mentrestant ha derivat. Aquí, l'artefacte que ha passat el CI és **exactam
     tag**) i `subject-digest: ${{ steps.build.outputs.digest }}`
 - **job `deploy`** — `needs: build`, **`runs-on: [self-hosted, hellogh]`**,
   `permissions: {contents: read, packages: read}`,
-  `environment: {name: production, url: https://hellogh.ies.jg5.dev}`. Passos **locals**:
+  `environment: {name: production, url: https://<domini-app>}`. Passos **locals**:
   `docker login ghcr.io` amb `GITHUB_TOKEN` → escriure `IMAGE_TAG` a `.env` → `docker compose pull`
   → `docker compose up -d --remove-orphans`. Cap SSH, cap secret de desplegament.
 - **smoke test** final: 6 reintents × 5 s sobre `/health` verificant que `version` és el tag. És el
@@ -660,7 +660,7 @@ lxc_machines:
 
 lxc_frpc_configs:
   hellogh:
-    - { name: hellogh, local_port: 8080, domain: hellogh.ies.jg5.dev }
+    - { name: hellogh, local_port: 8080, domain: <domini-app> }
 ```
 
 **Cap perfil nou.** Els perfils es comparteixen entre màquines (a `local.yaml`, `group01` i
@@ -759,7 +759,7 @@ tots els scripts `cicd-*`. `lxcsetup-cicd.yaml` es pot executar sense problema (
 | 3 | arreglar i fer merge | `ci.yml` sobre `main` |
 | 4 | `git tag -a v1.0.0 -m "..."; git push origin v1.0.0` | el deploy **s'atura esperant aprovació** — **exercici D** |
 | 5 | aprovar des de la web | build a GHCR → el runner del contenidor fa `pull` + `up -d` |
-| 6 | `curl https://hellogh.ies.jg5.dev/health` | `{"status":"healthy","version":"v1.0.0"}` **per frpc → frps → Caddy, sense tocar el VPS** |
+| 6 | `curl https://<domini-app>/health` | `{"status":"healthy","version":"v1.0.0"}` **per frpc → frps → Caddy, sense tocar el VPS** |
 | 7 | `docker pull ghcr.io/<usuari>/hellogh:v1.0.0` des d'una altra màquina, sense login | imatge pública idèntica a producció — **exercici C** |
 | 7b | `gh attestation verify oci://ghcr.io/<usuari>/hellogh:v1.0.0 --owner <usuari>` | procedència signada: repositori, workflow i commit — **exercici E** |
 | 8 | `incus exec hellogh -- systemctl status frpc actions.runner.*` | **els dos túnels sortints de costat** |
