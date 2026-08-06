@@ -1,9 +1,69 @@
 # hellogh — la lliçó «GitHub way», dins la infraestructura que ja tens
 
 > **Com fer servir aquest fitxer.** És el pla complet del projecte `hellogh`, pensat per continuar
-> en una sessió nova de Claude sense context previ. La secció 0 conté l'estat actual, el mapa de
-> fitxers, els fets ja verificats i el que ja s'ha descartat — **llegeix-la abans de fer res**, i
-> no tornis a derivar el que ja hi és. Els passos d'execució són al final.
+> en una sessió nova de Claude sense context previ.
+>
+> - **«Què toca ara?»** → el **primer `[ ]` sense marcar** del *Full de ruta* d'aquí sota. Res més.
+> - En acabar una tasca, **marca-la `[x]`** amb la data i fes-ne commit en el mateix commit que la
+>   feina. El full de ruta és la font de veritat de l'estat del projecte.
+> - Abans de fer res, llegeix la **secció 0** (estat, fets verificats, descartats) i **no tornis a
+>   derivar el que ja hi és**. El detall de cada fase és a *Passos d'execució*, al final.
+
+---
+
+## Full de ruta — fet / pendent
+
+Sis fases en ordre de dependència. **No es comença una fase sense haver superat la porta de
+l'anterior.** El detall de cada una és a [Passos d'execució](#passos-dexecució).
+
+### Fase 0 — Escriure el projecte · *jo* · **← ETS AQUÍ**
+
+- [x] Repositori a GitHub creat, públic, `origin` configurat *(2026-08-06)*
+- [x] `gh` autenticat com a `jgregor5` amb scope `workflow` *(2026-08-06)*
+- [x] Branca local reanomenada a `master` *(2026-08-06)*
+- [x] `PLAN.md` sanejat i publicable; dades reals a `INFRA.local.md` gitignorat *(2026-08-06)*
+- [ ] Obtenir els **SHA complets** de les 4 accions (pendent 0.6.4)
+- [ ] `app/` + `tests/`
+- [ ] `Dockerfile` · `compose.yaml` · `Makefile` · `requirements.txt` · `.dockerignore` · `.env.example`
+- [ ] `.github/workflows/{ci,deploy}.yml` + `.github/dependabot.yml`
+- [ ] `README.md` · `COMPARISON.md` · `LAB.md`  *(`SETUP.md` va a la Fase 3)*
+- [ ] **Porta:** `make docker-test` verd i `make docker-up && make health` respon `version: "dev"`
+
+### Fase 1 — Publicar · *jo, amb la teva autorització*
+
+- [ ] `git push -u origin master` *(demano confirmació abans)*
+- [ ] **Porta:** `ci.yml` verd — i el check `validate` ja existeix per a la Fase 4
+
+### Fase 2 — Contenidor i xarxa · *tu*
+
+- [ ] `incus storage info` — confirmar ~10GB lliures (pendent 0.6.1)
+- [ ] Les **dues** entrades a `lockdebian/inventories/remote.yaml` (Part 2)
+- [ ] Executar `lxcsetup-containers.yaml` i `frpc.yaml`
+- [ ] **Porta:** el contenidor va, té Docker, i `<domini-app>` resol (502 encara)
+
+### Fase 3 — Runner self-hosted · *tu*
+
+- [ ] Instal·lar i registrar el runner al contenidor (les ~5 comandes)
+- [ ] Escriure `SETUP.md` amb la versió real que s'hagi fet servir
+- [ ] **Porta:** el runner surt **Idle** a *Settings → Actions → Runners*
+
+### Fase 4 — Configuració de GitHub · *tu, per web*
+
+- [ ] `gh variable set APP_DOMAIN`
+- [ ] Environment `production`: required reviewers + només tags `v*`
+- [ ] Ruleset a `master`: exigir PR + check `validate`
+- [ ] **Porta:** push directe a `master` rebutjat; tag `v*` s'atura esperant aprovació
+
+### Fase 5 — Primer desplegament real · *tots dos*
+
+- [ ] `git tag -a v1.0.0` + push
+- [ ] **Comprovar la visibilitat del paquet a GHCR** i fer-lo públic si cal — **irreversible**
+- [ ] Aprovar el desplegament
+- [ ] **Porta:** `curl https://<domini-app>/health` → `{"status":"healthy","version":"v1.0.0"}`
+
+### Fase 6 — Exercicis de classe · *tu*
+
+- [ ] A (PR bloquejat) · B (estat persistent) · C (imatge pública) · D (aprovació) · E (atestació)
 
 ---
 
@@ -13,7 +73,7 @@
 
 | Element | Estat (verificat el 2026-08-06) |
 |---|---|
-| `hellogh/` (local) | Repo git a **`master`** (com lockdebian, no `main`), un commit (`initial commit`) amb només `.gitignore` |
+| `hellogh/` (local) | Repo git a **`master`** (com lockdebian, no `main`). Conté `.gitignore`, `PLAN.md` i `INFRA.local.md` (gitignorat). **Cap fitxer del projecte escrit encara** |
 | Repositori a GitHub | ✅ **Creat**: https://github.com/jgregor5/hellogh (públic, `origin` configurat). **Encara no s'hi ha pujat res** |
 | Usuari de GitHub | **`jgregor5`** — tot en minúscules, o sigui que `ghcr.io/jgregor5/hellogh` és vàlid i `${{ github.repository }}` es pot fer servir sense problema |
 | `gh` autenticat | ✅ com a `jgregor5`, amb scopes `repo`, `workflow`, `read:org`, `gist` (el `workflow` cal per pujar `.github/workflows/`) |
@@ -113,19 +173,24 @@ Aquest fitxer és `ansible/hellogh/PLAN.md`.
 Substitueix `<usuari>` per `jgregor5` a tot el document quan escriguis els fitxers; la ruta
 `ghcr.io/jgregor5/hellogh` és vàlida (tot minúscules).
 
-**A comprovar durant l'execució, no abans:**
+**A comprovar durant l'execució, no abans** (cada un té una fase assignada als passos d'execució):
 
-2. **Espai real al pool d'Incus**: `incus storage info` des de `cicdies`. No cal ampliar
+1. **Espai real al pool d'Incus** — *Fase 2*: `incus storage info` des de `cicdies`. No cal ampliar
    `lxc_pool_size`, però convé veure que hi hagi ~10GB lliures.
-3. **Visibilitat del paquet a GHCR** després del primer push. Les fonts es contradiuen (vegeu la
-   nota a «Com viatja la imatge»); s'ha de resoldre empíricament. L'exercici C necessita que sigui
-   públic, i el canvi de visibilitat és **irreversible**.
-4. **Versió del runner d'Actions**: consultar https://github.com/actions/runner/releases. El pla
-   **no la fixa a propòsit**, perquè quedaria obsoleta.
-5. **Versions i SHA de les accions.** Les majors vigents el 2026-08-06 són `actions/checkout` v7,
-   `docker/build-push-action` v7 i `docker/login-action` v4 (vegeu «Conformitat amb la pràctica del
-   sector»). **Torna-ho a comprovar el dia que escriguis els workflows** i agafa el SHA complet de
-   cada release — canvien sovint, i les del `GITHUB.md` (v4/v6/v3) ja són obsoletes.
+2. **Visibilitat del paquet a GHCR** — *Fase 5*, després del primer build. Les fonts es contradiuen
+   (vegeu la nota a «Com viatja la imatge»); s'ha de resoldre empíricament. L'exercici C necessita
+   que sigui públic, i el canvi de visibilitat és **irreversible**.
+3. **Versió del runner d'Actions** — *Fase 3*: consultar
+   https://github.com/actions/runner/releases. El pla **no la fixa a propòsit**, perquè quedaria
+   obsoleta.
+4. **Versions i SHA de les accions** — *Fase 0*, just abans d'escriure els workflows. Les majors
+   vigents el 2026-08-06 són `actions/checkout` v7, `docker/build-push-action` v7 i
+   `docker/login-action` v4 (vegeu «Conformitat amb la pràctica del sector»). **Torna-ho a
+   comprovar el dia que escriguis els workflows** i agafa el SHA complet de cada release — canvien
+   sovint, i les del `GITHUB.md` (v4/v6/v3) ja són obsoletes.
+5. **Com entra `<domini-app>` als workflows** — *Fase 0* (decisió) i *Fase 4* (aplicació). El domini
+   real no s'escriu literalment al repositori públic: `deploy.yml` el llegeix de la variable de
+   repositori `APP_DOMAIN`. Vegeu la nota a `INFRA.local.md`.
 
 ### 0.7 Convencions de documentació (per als `.md` en català a escriure)
 
@@ -698,74 +763,150 @@ tots els scripts `cicd-*`. `lxcsetup-cicd.yaml` es pot executar sense problema (
 
 ## Passos d'execució
 
-0. **Preguntar el nom d'usuari de GitHub** (pendent bloquejant 0.6.1): cal per al `compose.yaml`,
-   els dos workflows i totes les comandes `gh`.
-1. **Escriure `hellogh/`** sencer i fer el commit. (Ja és un repo git a `master`. **Decidit**: aquest
-   `PLAN.md` es publica, amb marcadors en lloc de les dades concretes d'infraestructura, que viuen
-   a `INFRA.local.md` — gitignorat. En escriure qualsevol fitxer nou, cap IP, host intern, usuari
-   de sistema ni port ha d'acabar al repositori.)
-2. **Verificar en local**: `make docker-test` · `make docker-up && make health && make docker-down`.
-3. **Autenticar `gh`** — ja està instal·lat (2.97.0). Només cal `gh auth login`, que **el fas tu**
-   perquè és interactiu.
-4. **Pujar el repo** — ja està creat i `origin` configurat (vegeu 0.1), o sigui que només cal
-   `git push -u origin master`. Acció cap enfora: **et demano confirmació explícita abans
-   d'executar-la.**
-   > El repositori a GitHub és **buit** i encara no té branca per defecte, així que la primera
-   > branca que s'hi pugi es converteix en la per defecte: pujant `master` primer, ja queda bé.
-   > Si algun dia calgués forçar-ho: `gh repo edit jgregor5/hellogh --default-branch master`.
-5. **Comprovar espai al pool** (`incus storage info`), afegir les **dues entrades** a l'inventari i
-   executar els dos playbooks de dalt.
-6. **Instal·lar el runner** al contenidor (documentat a `SETUP.md`, executat un cop):
+Sis fases. Cada una té una **porta de sortida** verificable: no es passa a la següent sense
+haver-la superat. La columna «Qui» importa perquè hi ha passos que **no puc fer jo**: els playbooks
+demanen contrasenya de `become` i el vault, i la configuració de GitHub és per web.
+
+| Fase | Què | Qui | Porta de sortida |
+|---|---|---|---|
+| **0** | Escriure el projecte i verificar-lo en local | jo | `make docker-test` verd |
+| **1** | Publicar a GitHub | jo (amb la teva autorització) | `ci.yml` verd a `master` |
+| **2** | Contenidor i xarxa | **tu** | el contenidor respon i el domini resol |
+| **3** | Runner self-hosted | **tu** (jo preparo les comandes) | el runner surt **Idle** |
+| **4** | Configuració de GitHub | **tu** (web) | environment i regla de branca actius |
+| **5** | Primer desplegament real | tots dos | `/health` retorna `v1.0.0` |
+| **6** | Exercicis de classe | tu | els 5 exercicis reproduïbles |
+
+> **La dependència que no és òbvia i que ordena tot això:** la regla de branca de la Fase 4 exigeix
+> el check `validate`, i **GitHub només ofereix checks que ja ha vist córrer**. Per tant la Fase 1
+> (que dispara `ci.yml` per primer cop) ha d'anar **abans** de la Fase 4. Configurar la protecció
+> abans de publicar no només és inútil: bloqueja el push inicial.
+
+### Fase 0 — Escriure el projecte (jo)
+
+1. **Abans dels workflows**, resoldre els pendents 0.6.4 i 0.6.5: agafar el **SHA complet** de
+   `actions/checkout` v7, `docker/build-push-action` v7, `docker/login-action` v4 i
+   `actions/attest-build-provenance`; i confirmar que `deploy.yml` llegeix el domini de
+   `${{ vars.APP_DOMAIN }}` i no d'un literal.
+2. **Escriure `hellogh/`** sencer, en aquest ordre (cada bloc depèn de l'anterior):
+   `app/` + `tests/` → `Dockerfile` + `compose.yaml` + `Makefile` + `requirements.txt` →
+   `.github/workflows/` + `dependabot.yml` → `README.md`, `COMPARISON.md`, `LAB.md`.
+   > **`SETUP.md` es deixa per a la Fase 3.** Documenta la instal·lació del runner, i la versió
+   > real no es coneix fins que s'instal·la. Escriure'l ara obliga a corregir-lo després.
+3. **Cap dada d'infraestructura al repositori.** Ni IPs, ni hosts interns, ni usuaris de sistema,
+   ni ports, ni el domini literal. Els valors reals viuen a `INFRA.local.md` (gitignorat).
+4. **Verificar en local**: `make docker-test` · `make docker-up && make health && make docker-down`.
+
+**Porta:** els tests passen dins de Docker i `/health` respon `version: "dev"` en local.
+
+### Fase 1 — Publicar (jo, amb la teva autorització)
+
+```shell
+git push -u origin master
+```
+
+> - Acció cap enfora: **demano confirmació explícita** abans d'executar-la.
+> - El repositori a GitHub és **buit** i encara no té branca per defecte: la primera branca que
+>   s'hi pugi ho serà. Pujant `master` primer, ja queda bé. Per forçar-ho:
+>   `gh repo edit jgregor5/hellogh --default-branch master`.
+> - Aquest push **dispara `ci.yml`** (`push: branches: [master]`). És la primera execució, i és la
+>   que fa que el check `validate` existeixi per a la Fase 4.
+
+**Porta:** `gh run watch` acaba en verd. Sense això, no continuïs: la Fase 4 no es pot configurar.
+
+### Fase 2 — Contenidor i xarxa (tu)
+
+1. `incus storage info` des de `cicdies` — confirmar ~10GB lliures (pendent 0.6.1).
+2. Afegir les **dues entrades** a `lockdebian/inventories/remote.yaml` (vegeu Part 2). Recorda que
+   **les dues**: només `lxc_machines` trencaria `frpc.yaml` per a tothom (0.4.3).
+3. Executar els dos playbooks de la Part 2 — demanen `--ask-become-pass` i el fitxer del vault.
+
+**Porta:** `incus list hellogh` el mostra en marxa, `incus exec hellogh -- docker version` funciona,
+i `<domini-app>` resol i dona 502 (encara no hi ha app: és el resultat correcte en aquest punt).
+
+### Fase 3 — Runner self-hosted (tu; jo preparo les comandes)
+
+Instal·lació al contenidor, **executada un sol cop**:
+```shell
+# 0) Consultar l'última versió a https://github.com/actions/runner/releases
+RUNNER_VERSION=2.XXX.Y            # substituir per la versió real, SENSE la "v"
+TOKEN=$(gh api -X POST repos/<usuari>/hellogh/actions/runners/registration-token -q .token)
+
+# 1) Descarregar i extreure dins del contenidor, com a usuari cicd
+incus exec hellogh -- su - cicd -c "
+  mkdir -p ~/actions-runner && cd ~/actions-runner &&
+  curl -fsSL -o runner.tar.gz \
+    https://github.com/actions/runner/releases/download/v\$RUNNER_VERSION/actions-runner-linux-x64-\$RUNNER_VERSION.tar.gz &&
+  tar xzf runner.tar.gz && rm runner.tar.gz"
+
+# 2) Dependències natives del runner (cal root)
+incus exec hellogh -- /home/cicd/actions-runner/bin/installdependencies.sh
+
+# 3) Registrar-lo amb l'etiqueta que fa servir deploy.yml
+incus exec hellogh -- su - cicd -c "cd ~/actions-runner && ./config.sh \
+    --url https://github.com/<usuari>/hellogh --token $TOKEN \
+    --labels hellogh --unattended"
+
+# 4) Instal·lar-lo com a servei systemd (cal root; s'executarà com a cicd)
+incus exec hellogh -- bash -c "cd /home/cicd/actions-runner && ./svc.sh install cicd && ./svc.sh start"
+```
+> - El **token de registre caduca en 1 hora**; si el `config.sh` falla per això, torna a generar-lo.
+> - `RUNNER_VERSION` s'ha d'expandir dins del `su -c`, per això va escapat (`\$`).
+> - L'usuari `cicd` **ja és al grup `docker`** (el crea `lxcsetup-containers.yaml`), així que el
+>   runner pot fer `docker compose` sense `sudo`.
+> - Els passos 2 i 4 van com a **root**, per això no passen per `su - cicd`.
+> - Idempotència: si `~cicd/actions-runner/.runner` ja existeix, el runner ja està registrat i
+>   `config.sh` fallarà. Per tornar-lo a registrar cal `./config.sh remove --token <nou>` primer.
+
+Un cop instal·lat, **escriure `SETUP.md`** amb la versió real que s'ha fet servir (vegeu Fase 0,
+on s'ajorna a posta) i fer-ne commit.
+
+**Porta:** a *Settings → Actions → Runners* el runner surt **Idle**.
+
+### Fase 4 — Configuració de GitHub (tu, per web)
+
+La CLI no ho fa tot; aquests tres passos són de la interfície web.
+
+1. **Variable del domini** — això sí que es pot per CLI:
    ```shell
-   # 0) Consultar l'última versió a https://github.com/actions/runner/releases
-   RUNNER_VERSION=2.XXX.Y            # substituir per la versió real, SENSE la "v"
-   TOKEN=$(gh api -X POST repos/<usuari>/hellogh/actions/runners/registration-token -q .token)
-
-   # 1) Descarregar i extreure dins del contenidor, com a usuari cicd
-   incus exec hellogh -- su - cicd -c "
-     mkdir -p ~/actions-runner && cd ~/actions-runner &&
-     curl -fsSL -o runner.tar.gz \
-       https://github.com/actions/runner/releases/download/v\$RUNNER_VERSION/actions-runner-linux-x64-\$RUNNER_VERSION.tar.gz &&
-     tar xzf runner.tar.gz && rm runner.tar.gz"
-
-   # 2) Dependències natives del runner (cal root)
-   incus exec hellogh -- /home/cicd/actions-runner/bin/installdependencies.sh
-
-   # 3) Registrar-lo amb l'etiqueta que fa servir deploy.yml
-   incus exec hellogh -- su - cicd -c "cd ~/actions-runner && ./config.sh \
-       --url https://github.com/<usuari>/hellogh --token $TOKEN \
-       --labels hellogh --unattended"
-
-   # 4) Instal·lar-lo com a servei systemd (cal root; s'executarà com a cicd)
-   incus exec hellogh -- bash -c "cd /home/cicd/actions-runner && ./svc.sh install cicd && ./svc.sh start"
+   gh variable set APP_DOMAIN --body '<domini-app>'   # el valor real, de INFRA.local.md
    ```
-   > - El **token de registre caduca en 1 hora**; si el `config.sh` falla per això, torna a generar-lo.
-   > - `RUNNER_VERSION` s'ha d'expandir dins del `su -c`, per això va escapat (`\$`).
-   > - L'usuari `cicd` **ja és al grup `docker`** (el crea `lxcsetup-containers.yaml`), així que el
-   >   runner pot fer `docker compose` sense `sudo`.
-   > - Els passos 2 i 4 van com a **root**, per això no passen per `su - cicd`.
-   > - Idempotència: si `~cicd/actions-runner/.runner` ja existeix, el runner ja està registrat i
-   >   `config.sh` fallarà. Per tornar-lo a registrar cal `./config.sh remove --token <nou>` primer.
+2. **Environment** — *Settings → Environments → New environment → `production`*:
+   *Required reviewers* (tu mateix serveix) i *Deployment branches and tags* = només `v*`.
+3. **Regla de branca** — *Settings → Rules → New ruleset* sobre `master`: exigir pull request i
+   el check `validate`.
+   > ⚠️ **El check `validate` només apareix a la llista si ja ha corregut alguna vegada.** Per això
+   > aquesta fase va després de la Fase 1. Si no el trobes, és que encara no has publicat.
 
-   Verificar a *Settings → Actions → Runners*: ha de sortir **Idle**.
-7. **Configurar GitHub** (per web, la CLI no ho fa tot): *Settings → Environments → production* →
-   *Required reviewers* i *Deployment branches and tags* = només `v*`; *Settings → Rules* → exigir
-   PR + check `validate` per a `master`.
+**Porta:** un push directe a `master` és rebutjat, i un tag `v*` s'atura esperant aprovació.
 
----
+### Fase 5 — Primer desplegament real (tots dos)
 
-## Verificació end-to-end
-
-| Pas | Comanda | Demostra |
+| # | Acció | Resultat esperat |
 |---|---|---|
-| 1 | branca + canvi trivial + `gh pr create` | `ci.yml` corre al PR (§5 Pas 1) |
-| 2 | trencar un test i tornar a pujar | el check falla i **bloqueja el merge** — **exercici A** |
-| 3 | arreglar i fer merge | `ci.yml` sobre `master` |
-| 4 | `git tag -a v1.0.0 -m "..."; git push origin v1.0.0` | el deploy **s'atura esperant aprovació** — **exercici D** |
-| 5 | aprovar des de la web | build a GHCR → el runner del contenidor fa `pull` + `up -d` |
-| 6 | `curl https://<domini-app>/health` | `{"status":"healthy","version":"v1.0.0"}` **per frpc → frps → Caddy, sense tocar el VPS** |
-| 7 | `docker pull ghcr.io/<usuari>/hellogh:v1.0.0` des d'una altra màquina, sense login | imatge pública idèntica a producció — **exercici C** |
-| 7b | `gh attestation verify oci://ghcr.io/<usuari>/hellogh:v1.0.0 --owner <usuari>` | procedència signada: repositori, workflow i commit — **exercici E** |
-| 8 | `incus exec hellogh -- systemctl status frpc actions.runner.*` | **els dos túnels sortints de costat** |
-| 9 | `incus exec hellogh -- ls -l /opt/cicd/cicd-worker.sh` + `cat /var/log/cicd-worker.log` | hi és i **no s'ha executat mai**: la peça que GitHub substitueix |
-| 10 | `gh workflow run deploy.yml -f tag=v1.0.0` · `gh run watch` · `gh run view --log` | `redeploy`, `follow` i `logs` (§6, §13) |
+| 1 | `git tag -a v1.0.0 -m "…"` · `git push origin v1.0.0` | `deploy.yml` arrenca; el job `build` puja la imatge a GHCR |
+| 2 | **Comprovar la visibilitat del paquet a GHCR** (pendent 0.6.2) | si surt privat, *Package settings → Change visibility → Public*. **Irreversible** — i l'exercici C el necessita públic |
+| 3 | Aprovar el desplegament des de la web | el job `deploy` s'engega al runner del contenidor |
+| 4 | `curl https://<domini-app>/health` | `{"status":"healthy","version":"v1.0.0"}`, **per frpc → frps → Caddy, sense tocar el VPS** |
+
+**Porta:** `/health` retorna exactament el tag publicat. Aquí el pipeline ja és real de punta a punta.
+
+### Fase 6 — Exercicis de classe (tu)
+
+Els cinc exercicis del `LAB.md`, ara que tota la maquinària funciona:
+
+| # | Exercici | Comprovació |
+|---|---|---|
+| **A** | PR amb un test trencat | el check falla i **bloqueja el botó de merge** |
+| **B** | Job que depèn d'estat deixat a la màquina | **passa a `[self-hosted, hellogh]` i peta a `ubuntu-24.04`** — mateix workflow, dos runners |
+| **C** | `docker pull ghcr.io/jgregor5/hellogh:v1.0.0` des d'una altra màquina, sense login | imatge pública idèntica a producció |
+| **D** | Un empeny el tag, **un altre** l'aprova | el job es queda **en pausa** |
+| **E** | `gh attestation verify oci://ghcr.io/jgregor5/hellogh:v1.0.0 --owner jgregor5` | procedència signada: repositori, workflow i commit |
+
+I les tres comprovacions que fan visible el disseny:
+
+| Comanda | Demostra |
+|---|---|
+| `incus exec hellogh -- systemctl status frpc actions.runner.*` | **els dos túnels sortints de costat**, cap port obert |
+| `incus exec hellogh -- ls -l /opt/cicd/cicd-worker.sh` + `cat /var/log/cicd-worker.log` | hi és i **no s'ha executat mai**: la peça exacta que GitHub substitueix |
+| `gh workflow run deploy.yml -f tag=v1.0.0` · `gh run watch` · `gh run view --log` | `redeploy`, `follow` i `logs` de lockdebian (§6, §13) |
