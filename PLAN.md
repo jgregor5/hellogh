@@ -13,7 +13,7 @@
 
 | Element | Estat (verificat el 2026-08-06) |
 |---|---|
-| `hellogh/` (local) | Repo git a `main`, un commit (`initial commit`) amb només `.gitignore` |
+| `hellogh/` (local) | Repo git a **`master`** (com lockdebian, no `main`), un commit (`initial commit`) amb només `.gitignore` |
 | Repositori a GitHub | ✅ **Creat**: https://github.com/jgregor5/hellogh (públic, `origin` configurat). **Encara no s'hi ha pujat res** |
 | Usuari de GitHub | **`jgregor5`** — tot en minúscules, o sigui que `ghcr.io/jgregor5/hellogh` és vàlid i `${{ github.repository }}` es pot fer servir sense problema |
 | `gh` autenticat | ✅ com a `jgregor5`, amb scopes `repo`, `workflow`, `read:org`, `gist` (el `workflow` cal per pujar `.github/workflows/`) |
@@ -304,7 +304,7 @@ la mitigació és **estructural**, no una casella:
 
 | Workflow | `runs-on` | Disparadors | Pot executar codi d'un fork? |
 |---|---|---|---|
-| `ci.yml` | `ubuntu-24.04` | `pull_request`, `push: main` | Sí — però és una **VM d'un sol ús de GitHub**, no teva |
+| `ci.yml` | `ubuntu-24.04` | `pull_request`, `push: master` | Sí — però és una **VM d'un sol ús de GitHub**, no teva |
 | `deploy.yml` | `[self-hosted, hellogh]` | `push: tags: v*`, `workflow_dispatch` | **No** — un fork no pot empènyer un tag |
 
 El codi no confiable no arriba mai al runner, perquè l'únic workflow que l'usa no es pot disparar
@@ -340,7 +340,7 @@ Incus limita el dany a un contenidor d'un sol ús, que és exactament per a aix�
 hellogh/
 ├── .github/
 │   ├── workflows/
-│   │   ├── ci.yml            # ubuntu-24.04 — PR + push a main
+│   │   ├── ci.yml            # ubuntu-24.04 — PR + push a master
 │   │   └── deploy.yml        # build a ubuntu-24.04, deploy al runner self-hosted
 │   └── dependabot.yml        # manté al dia els SHA de les accions
 ├── app/{__init__.py,main.py} # FastAPI: GET / i GET /health → {"version": APP_VERSION}
@@ -375,7 +375,7 @@ del codi, etapa `test` amb `CMD ["pytest","tests/","-v"]`, etapa `production` am
 
 ### `ci.yml`
 
-- `on: pull_request` + `push: branches: [main]`; job `validate`, **`runs-on: ubuntu-24.04`**
+- `on: pull_request` + `push: branches: [master]`; job `validate`, **`runs-on: ubuntu-24.04`**
   (fixat, no `ubuntu-latest` — vegeu «Conformitat»), `timeout-minutes: 10` (explícit, §7)
 - `permissions: {contents: read}` explícit al capdamunt
 - `actions/checkout` **fixat per SHA** → `docker build --target test -t hellogh-test .` →
@@ -700,15 +700,19 @@ tots els scripts `cicd-*`. `lxcsetup-cicd.yaml` es pot executar sense problema (
 
 0. **Preguntar el nom d'usuari de GitHub** (pendent bloquejant 0.6.1): cal per al `compose.yaml`,
    els dos workflows i totes les comandes `gh`.
-1. **Escriure `hellogh/`** sencer i fer el commit. (Ja és un repo git a `main`. **Decidit**: aquest
+1. **Escriure `hellogh/`** sencer i fer el commit. (Ja és un repo git a `master`. **Decidit**: aquest
    `PLAN.md` es publica, amb marcadors en lloc de les dades concretes d'infraestructura, que viuen
    a `INFRA.local.md` — gitignorat. En escriure qualsevol fitxer nou, cap IP, host intern, usuari
    de sistema ni port ha d'acabar al repositori.)
 2. **Verificar en local**: `make docker-test` · `make docker-up && make health && make docker-down`.
 3. **Autenticar `gh`** — ja està instal·lat (2.97.0). Només cal `gh auth login`, que **el fas tu**
    perquè és interactiu.
-4. **Crear i pujar el repo**: `gh repo create hellogh --public --source=. --remote=origin --push`.
-   Acció cap enfora: **et demano confirmació explícita abans d'executar-la.**
+4. **Pujar el repo** — ja està creat i `origin` configurat (vegeu 0.1), o sigui que només cal
+   `git push -u origin master`. Acció cap enfora: **et demano confirmació explícita abans
+   d'executar-la.**
+   > El repositori a GitHub és **buit** i encara no té branca per defecte, així que la primera
+   > branca que s'hi pugi es converteix en la per defecte: pujant `master` primer, ja queda bé.
+   > Si algun dia calgués forçar-ho: `gh repo edit jgregor5/hellogh --default-branch master`.
 5. **Comprovar espai al pool** (`incus storage info`), afegir les **dues entrades** a l'inventari i
    executar els dos playbooks de dalt.
 6. **Instal·lar el runner** al contenidor (documentat a `SETUP.md`, executat un cop):
@@ -746,7 +750,7 @@ tots els scripts `cicd-*`. `lxcsetup-cicd.yaml` es pot executar sense problema (
    Verificar a *Settings → Actions → Runners*: ha de sortir **Idle**.
 7. **Configurar GitHub** (per web, la CLI no ho fa tot): *Settings → Environments → production* →
    *Required reviewers* i *Deployment branches and tags* = només `v*`; *Settings → Rules* → exigir
-   PR + check `validate` per a `main`.
+   PR + check `validate` per a `master`.
 
 ---
 
@@ -756,7 +760,7 @@ tots els scripts `cicd-*`. `lxcsetup-cicd.yaml` es pot executar sense problema (
 |---|---|---|
 | 1 | branca + canvi trivial + `gh pr create` | `ci.yml` corre al PR (§5 Pas 1) |
 | 2 | trencar un test i tornar a pujar | el check falla i **bloqueja el merge** — **exercici A** |
-| 3 | arreglar i fer merge | `ci.yml` sobre `main` |
+| 3 | arreglar i fer merge | `ci.yml` sobre `master` |
 | 4 | `git tag -a v1.0.0 -m "..."; git push origin v1.0.0` | el deploy **s'atura esperant aprovació** — **exercici D** |
 | 5 | aprovar des de la web | build a GHCR → el runner del contenidor fa `pull` + `up -d` |
 | 6 | `curl https://<domini-app>/health` | `{"status":"healthy","version":"v1.0.0"}` **per frpc → frps → Caddy, sense tocar el VPS** |
