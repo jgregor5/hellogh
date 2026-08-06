@@ -22,12 +22,18 @@ l'anterior.** El detall de cada una és a [Passos d'execució](#passos-dexecuci�
 - [x] `gh` autenticat com a `jgregor5` amb scope `workflow` *(2026-08-06)*
 - [x] Branca local reanomenada a `master` *(2026-08-06)*
 - [x] `PLAN.md` sanejat i publicable; dades reals a `INFRA.local.md` gitignorat *(2026-08-06)*
+- [x] Seqüència d'execució redissenyada en 6 fases amb portes *(2026-08-06)*
+- [x] Especificats el contracte d'execució (3 invariants) i l'exercici B *(2026-08-06)*
 - [ ] Obtenir els **SHA complets** de les 4 accions (pendent 0.6.4)
 - [ ] `app/` + `tests/`
 - [ ] `Dockerfile` · `compose.yaml` · `Makefile` · `requirements.txt` · `.dockerignore` · `.env.example`
-- [ ] `.github/workflows/{ci,deploy}.yml` + `.github/dependabot.yml`
+- [ ] `.github/workflows/{ci,deploy,lab-b}.yml` + `.github/dependabot.yml`
 - [ ] `README.md` · `COMPARISON.md` · `LAB.md`  *(`SETUP.md` va a la Fase 3)*
 - [ ] **Porta:** `make docker-test` verd i `make docker-up && make health` respon `version: "dev"`
+
+> **En escriure `compose.yaml` i `deploy.yml`, respecta el «Contracte d'execució» de la Part 1**:
+> `PORT` mai al `.env` del contenidor, `.env` s'escriu amb `>` i no `>>`, i verifica `id cicd`.
+> Són els tres errors que donen un 502 sense cap missatge d'error.
 
 ### Fase 1 — Publicar · *jo, amb la teva autorització*
 
@@ -43,7 +49,8 @@ l'anterior.** El detall de cada una és a [Passos d'execució](#passos-dexecuci�
 
 ### Fase 3 — Runner self-hosted · *tu*
 
-- [ ] Instal·lar i registrar el runner al contenidor (les ~5 comandes)
+- [ ] Instal·lar i registrar el runner al contenidor (5 passos)
+- [ ] `incus exec hellogh -- id cicd` → confirmar que és **uid 1000** (invariant 3 de la Part 1)
 - [ ] Escriure `SETUP.md` amb la versió real que s'hagi fet servir
 - [ ] **Porta:** el runner surt **Idle** a *Settings → Actions → Runners*
 
@@ -170,7 +177,7 @@ Aquest fitxer és `ansible/hellogh/PLAN.md`.
 ### 0.6 Pendents oberts
 
 **Res bloquejant.** El nom d'usuari (`jgregor5`) i el repositori ja estan resolts — vegeu 0.1.
-Substitueix `<usuari>` per `jgregor5` a tot el document quan escriguis els fitxers; la ruta
+Substitueix `jgregor5` per `jgregor5` a tot el document quan escriguis els fitxers; la ruta
 `ghcr.io/jgregor5/hellogh` és vàlida (tot minúscules).
 
 **A comprovar durant l'execució, no abans** (cada un té una fase assignada als passos d'execució):
@@ -406,7 +413,8 @@ hellogh/
 ├── .github/
 │   ├── workflows/
 │   │   ├── ci.yml            # ubuntu-24.04 — PR + push a master
-│   │   └── deploy.yml        # build a ubuntu-24.04, deploy al runner self-hosted
+│   │   ├── deploy.yml        # build a ubuntu-24.04, deploy al runner self-hosted
+│   │   └── lab-b.yml         # workflow_dispatch — l'exercici B (vegeu LAB.md)
 │   └── dependabot.yml        # manté al dia els SHA de les accions
 ├── app/{__init__.py,main.py} # FastAPI: GET / i GET /health → {"version": APP_VERSION}
 ├── tests/{__init__.py,test_main.py}
@@ -416,9 +424,9 @@ hellogh/
 ├── requirements.txt          # fastapi, uvicorn[standard], pytest, httpx
 ├── .dockerignore .gitignore .env.example
 ├── README.md                 # Guia d'ús
-├── SETUP.md                  # inventari + instal·lació del runner (les ~8 comandes)
+├── SETUP.md                  # inventari + instal·lació del runner (5 passos)
 ├── COMPARISON.md             # lockdebian ↔ GitHub, peça per peça
-└── LAB.md                    # els 4 exercicis — el document que fa la classe
+└── LAB.md                    # els 5 exercicis (A–E) — el document que fa la classe
 ```
 
 `app/main.py` trivial: `GET /` retorna un missatge, i `GET /health` retorna
@@ -437,6 +445,47 @@ del codi, etapa `test` amb `CMD ["pytest","tests/","-v"]`, etapa `production` am
 > `name: hellogh` fix al `compose.yaml` no és cosmètic: `cicd-cleanup.sh` es queixa (al seu propi
 > comentari) que compose deriva el nom de projecte del directori amb el sha i va deixant xarxes
 > `<repo>-<sha>_default` que esgoten el pool de subxarxes. Amb el nom fix, hellogh no en deixa cap.
+
+### Contracte d'execució — tres invariants que si es trenquen no es veuen
+
+Aquestes tres coses **han de ser certes** perquè el camí frpc → frps → Caddy funcioni. Cap de les
+tres dona un error clar quan falla: donen un 502 amb tots els components dient que estan bé.
+
+**1. La cadena de ports ha de quedar quadrada en 8080.**
+
+```text
+Caddy (<domini-comodí>)  ──▶  frps  ──▶  frpc dins del contenidor
+                                              │  local_port: 8080   ← inventari, Part 2
+                                              ▼
+                                   compose:  "${PORT:-8080}:8000"
+                                              │
+                                              ▼
+                                        uvicorn :8000  ← EXPOSE del Dockerfile
+```
+
+> ⚠️ **`PORT` no s'ha de definir MAI al `.env` del contenidor.** El valor per defecte (8080) és el
+> que espera l'entrada `local_port` de l'inventari. Si algú afegeix `PORT=` a `.env.example` i
+> aquell fitxer arriba al contenidor, frpc continuarà enviant al 8080, ningú no hi escoltarà i el
+> resultat és un **502 sense cap error a cap log**. `PORT` només té sentit en local, per no xocar
+> amb un altre projecte.
+
+**2. El job `deploy` **sobreescriu** `.env`, no hi afegeix res.**
+
+```shell
+printf 'IMAGE_TAG=%s\n' "$TAG" > .env      # `>`, mai `>>`
+```
+
+Amb `>>` el fitxer aniria acumulant un `IMAGE_TAG` per desplegament. Compose es queda amb l'últim,
+o sigui que *sembla* que funciona fins que algú llegeix el fitxer i no entén res. `.env` al
+contenidor conté **només** `IMAGE_TAG`: tota la resta són els defaults del `compose.yaml`.
+
+**3. `user: "${UID:-1000}:${GID:-1000}"` cau al default sota el runner.**
+
+`UID` i `GID` són variables de *shell*, no d'entorn exportades: compose no les veu quan el job les
+invoca de forma no interactiva, i agafa `1000:1000`. Funciona perquè l'usuari `cicd` del contenidor
+**és** uid 1000 — però **verifica-ho** a la Fase 3 amb `incus exec hellogh -- id cicd`. Si no ho
+fos, els fitxers del volum quedarien d'un altre propietari. En local, on `make` sí que exporta
+`UID`/`GID`, el comportament és el correcte.
 
 ### `ci.yml`
 
@@ -526,7 +575,7 @@ Perquè el pas 7 funcioni, `compose.yaml` ha de **nomenar** la imatge, no només
 ```yaml
 services:
   app:
-    image: ghcr.io/<usuari>/hellogh:${IMAGE_TAG:-latest}
+    image: ghcr.io/jgregor5/hellogh:${IMAGE_TAG:-latest}
     build: { context: ., target: production }   # només per a `make` en local
     environment:
       - APP_VERSION=${IMAGE_TAG:-dev}           # el que retorna GET /health
@@ -584,7 +633,7 @@ que mentrestant ha derivat. Aquí, l'artefacte que ha passat el CI és **exactam
     (els dos últims, per a les atestacions)
   - `docker/login-action` → `docker/metadata-action` (calcula tags i labels OCI) →
     `docker/build-push-action` amb `target: production`, `cache-from`/`cache-to: type=gha` (§10)
-  - **`actions/attest-build-provenance`** amb `subject-name: ghcr.io/<usuari>/hellogh` (**sense
+  - **`actions/attest-build-provenance`** amb `subject-name: ghcr.io/jgregor5/hellogh` (**sense
     tag**) i `subject-digest: ${{ steps.build.outputs.digest }}`
 - **job `deploy`** — `needs: build`, **`runs-on: [self-hosted, hellogh]`**,
   `permissions: {contents: read, packages: read}`,
@@ -594,12 +643,22 @@ que mentrestant ha derivat. Aquí, l'artefacte que ha passat el CI és **exactam
 - **smoke test** final: 6 reintents × 5 s sobre `/health` verificant que `version` és el tag. És el
   `post-deploy.sh` de lockdebian, mateixa lògica.
 
+> **Si el smoke test falla, el contenidor es queda amb la versió nova en marxa.** No hi ha rollback
+> automàtic, i és **a posta**: `undeploy` està fora d'abast (0.5) i un rollback automàtic amagaria
+> precisament el que la classe ha de veure. El remei és manual i és una demostració per si sol —
+> tornar a desplegar el tag bo:
+> ```shell
+> gh workflow run deploy.yml -f tag=v1.0.0     # el `redeploy` de lockdebian
+> ```
+> Val la pena dir-ho a classe: **el pipeline detecta la fallada, no la repara.** Distingir «el CI
+> t'avisa» de «el CI t'arregla» és part de la lliçó.
+
 > **L'atestació és la idea 2, però criptogràfica.** `gh attestation verify` demostra que aquella
 > imatge exacta (per digest) la va construir aquell repositori, en aquell workflow, en aquell
 > commit. A lockdebian això no es pot ni formular: la imatge la construeix el contenidor destí i no
 > hi ha cap manera de lligar-la a res. **Val la pena convertir-ho en un cinquè exercici del
 > `LAB.md`**, amb una sola comanda:
-> `gh attestation verify oci://ghcr.io/<usuari>/hellogh:v1.0.0 --owner <usuari>`
+> `gh attestation verify oci://ghcr.io/jgregor5/hellogh:v1.0.0 --owner jgregor5`
 
 ### Conformitat amb la pràctica del sector (comprovat el 2026-08-06)
 
@@ -669,6 +728,12 @@ La guia estàndard diu dues coses que aquest projecte no compleix. Cal dir-ho a 
 
 - **Cap secret de desplegament.** No hi ha `DEPLOY_SSH_KEY` ni clau de llarga durada: el runner ja
   és a dins. Molts equips reals encara guarden una clau SSH com a secret — això és millor.
+  > **Matís honest, per no vendre-ho més net del que és.** «Cap secret» vol dir *cap credencial de
+  > llarga durada que tu hagis de custodiar*. Al contenidor hi queden igualment dues coses al disc:
+  > `.credentials_rsaparams` (la identitat del runner) i, després del primer desplegament,
+  > `~cicd/.docker/config.json` amb el token de `docker login`. La diferència real amb una clau SSH
+  > de desplegament és que **totes dues són efímeres i revocables des de la interfície de GitHub**,
+  > i cap de les dues obre res cap endins. Però dir «zero credencials al disc» seria fals.
 - `permissions:` explícit i mínim a cada job.
 - `concurrency` al desplegament, perquè dos tags no se solapin.
 - `timeout-minutes` explícit.
@@ -676,19 +741,65 @@ La guia estàndard diu dues coses que aquest projecte no compleix. Cal dir-ho a 
 
 ### `LAB.md` — el deliverable pedagògic
 
-Quatre exercicis, cadascun una fallada preparada que **un sistema atrapa i l'altre no**:
+Cinc exercicis, cadascun una fallada preparada que **un sistema atrapa i l'altre no**:
 
 | # | Exercici | Què passa | Idea |
 |---|---|---|---|
 | **A** | PR amb un test trencat | El botó de merge es queda **gris**. A lockdebian aquell codi ja seria a `master` i el pipeline només ho *informaria* | 1 |
 | **B** | Un job que depèn d'una cosa que va quedar a la màquina | **Passa al runner self-hosted i peta a `ubuntu-24.04`** — mateix workflow, dos runners, resultat oposat | 3 |
-| **C** | `git tag -a v1.0.0` → `docker pull ghcr.io/<usuari>/hellogh:v1.0.0` des d'una altra màquina | Corre **idèntic** a producció; lockdebian reconstrueix al destí | 2 |
+| **C** | `git tag -a v1.0.0` → `docker pull ghcr.io/jgregor5/hellogh:v1.0.0` des d'una altra màquina | Corre **idèntic** a producció; lockdebian reconstrueix al destí | 2 |
 | **D** | Un alumne empeny el tag, **un altre** l'aprova | El job es queda **en pausa** | 4 |
-| **E** | `gh attestation verify oci://ghcr.io/<usuari>/hellogh:v1.0.0 --owner <usuari>` | Prova **criptogràfica** de qui va construir la imatge, des d'on i amb quin commit. A lockdebian ni tan sols es pot formular la pregunta | 2 |
+| **E** | `gh attestation verify oci://ghcr.io/jgregor5/hellogh:v1.0.0 --owner jgregor5` | Prova **criptogràfica** de qui va construir la imatge, des d'on i amb quin commit. A lockdebian ni tan sols es pot formular la pregunta | 2 |
 
 L'exercici B és el que ningú ensenya i tothom aprèn a cops; aquí es demostra amb una sola
 diferència de `runs-on`. A i B els fa **cada alumne al seu repo** (cost zero); C i D es demostren
 **una vegada**, en directe, sobre una URL real amb certificat real.
+
+#### L'exercici B, concretat
+
+La resta d'exercicis són una comanda; aquest necessita un workflow propi, perquè el que ha de
+demostrar és que **l'estat sobreviu entre execucions diferents** — no dins d'una sola execució.
+Aquesta és la part que es fa malament quan s'improvisa: si les dues passes van al mateix job,
+passa als dos runners i no es demostra res.
+
+`.github/workflows/lab-b.yml`, només `workflow_dispatch`:
+
+```yaml
+on:
+  workflow_dispatch:
+    inputs:
+      runner:   { type: choice, options: [ubuntu-24.04, self-hosted], default: ubuntu-24.04 }
+      sembrar:  { type: boolean, default: false }   # deixa l'estat a la màquina
+```
+
+Un sol job amb `runs-on: ${{ inputs.runner }}` i dos passos:
+
+```yaml
+- name: Sembrar estat (només si es demana)
+  if: inputs.sembrar
+  run: mkdir -p ~/.hellogh-lab && date -Is > ~/.hellogh-lab/estat.txt
+
+- name: Fer servir l'estat (sempre)
+  run: cat ~/.hellogh-lab/estat.txt      # ← aquí peta si la màquina és nova
+```
+
+**El guió de classe, tres execucions:**
+
+| # | `runner` | `sembrar` | Resultat | Per què |
+|---|---|---|---|---|
+| 1 | `self-hosted` | ✅ | ✅ passa | acaba de crear el fitxer |
+| 2 | `self-hosted` | ❌ | ✅ **passa** | el `$HOME` de `cicd` continua sent el mateix |
+| 3 | `ubuntu-24.04` | ❌ | ❌ **peta** | VM nova: `cat: No such file or directory` |
+
+L'execució **2 és la lliçó**: un job que passa i no hauria de passar. El workflow és idèntic; el
+que canvia és si la màquina recorda. La 3 és el mateix workflow dient la veritat.
+
+> **El mateix passa amb la cau de Docker**, i és més realista que un fitxer a `$HOME`: al contenidor
+> `docker build` reaprofita capes d'execucions anteriors, i a `ubuntu-24.04` no. Un `Dockerfile` que
+> depèn d'una capa antiga construeix aquí i falla allà. El fitxer és millor per a la demostració
+> perquè és determinista; la cau de Docker és millor per explicar per què això passa **de veritat**.
+
+Per netejar entre classes: `incus exec hellogh -- rm -rf /home/cicd/.hellogh-lab`.
 
 ### `COMPARISON.md`
 `GITHUB.md` va de GitHub cap a lockdebian; aquest fa el camí invers, des del projecte real.
@@ -830,7 +941,7 @@ Instal·lació al contenidor, **executada un sol cop**:
 ```shell
 # 0) Consultar l'última versió a https://github.com/actions/runner/releases
 RUNNER_VERSION=2.XXX.Y            # substituir per la versió real, SENSE la "v"
-TOKEN=$(gh api -X POST repos/<usuari>/hellogh/actions/runners/registration-token -q .token)
+TOKEN=$(gh api -X POST repos/jgregor5/hellogh/actions/runners/registration-token -q .token)
 
 # 1) Descarregar i extreure dins del contenidor, com a usuari cicd
 incus exec hellogh -- su - cicd -c "
@@ -844,7 +955,7 @@ incus exec hellogh -- /home/cicd/actions-runner/bin/installdependencies.sh
 
 # 3) Registrar-lo amb l'etiqueta que fa servir deploy.yml
 incus exec hellogh -- su - cicd -c "cd ~/actions-runner && ./config.sh \
-    --url https://github.com/<usuari>/hellogh --token $TOKEN \
+    --url https://github.com/jgregor5/hellogh --token $TOKEN \
     --labels hellogh --unattended"
 
 # 4) Instal·lar-lo com a servei systemd (cal root; s'executarà com a cicd)
