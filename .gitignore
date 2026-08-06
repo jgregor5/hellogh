@@ -1,6 +1,7 @@
-# Document de treball intern: conté la topologia de la infraestructura del
-# centre (hosts, IPs, usuaris) i no s'ha de publicar en un repositori públic.
-PLAN.md
+# Dades concretes de la infraestructura del centre (hosts, IPs, usuaris, ports).
+# `PLAN.md` sí que es publica: hi va amb marcadors, i els valors reals són aquí.
+INFRA.local.md
+*.local.md
 
 # Python
 __pycache__/
