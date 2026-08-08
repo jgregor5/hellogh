@@ -34,6 +34,12 @@ l'anterior.** El detall de cada una és a [Passos d'execució](#passos-dexecuci�
 > **En escriure `compose.yaml` i `deploy.yml`, respecta el «Contracte d'execució» de la Part 1**:
 > `PORT` mai al `.env` del contenidor, `.env` s'escriu amb `>` i no `>>`, i verifica `id cicd`.
 > Són els tres errors que donen un 502 sense cap missatge d'error.
+>
+> I els quatre detalls de `deploy.yml` que **passen en verd tot i estar malament** (§0.4): el job
+> `build` amb `if: github.event_name == 'push'`, el `deploy` amb
+> `if: ${{ !cancelled() && needs.build.result != 'failure' }}`, el `checkout` del job `deploy` amb
+> `ref:` al tag desplegat, i la imatge etiquetada amb **tag i SHA**. Cap dels quatre és un error de
+> sintaxi: per això no els detecta ningú fins que fan mal.
 
 ### Fase 1 — Publicar · *jo, amb la teva autorització*
 
@@ -52,13 +58,14 @@ l'anterior.** El detall de cada una és a [Passos d'execució](#passos-dexecuci�
 - [ ] Instal·lar i registrar el runner al contenidor (5 passos)
 - [ ] `incus exec hellogh -- id cicd` → confirmar que és **uid 1000** (invariant 3 de la Part 1)
 - [ ] Escriure `SETUP.md` amb la versió real que s'hagi fet servir
-- [ ] **Porta:** el runner surt **Idle** a *Settings → Actions → Runners*
+- [ ] **Porta:** `gh api repos/{owner}/{repo}/actions/runners` el mostra **`online`** i no ocupat
 
-### Fase 4 — Configuració de GitHub · *tu, per web*
+### Fase 4 — Configuració de GitHub · *jo, amb la teva autorització* · **tot per CLI**
 
 - [ ] `gh variable set APP_DOMAIN`
-- [ ] Environment `production`: required reviewers + només tags `v*`
-- [ ] Ruleset a `master`: exigir PR + check `validate`
+- [ ] **Protecció a)** `gh api … /branches/master/protection`: exigir PR + el check `validate`
+- [ ] **Protecció b)** `gh api … /environments/production`: revisor obligatori + només tags `v*`
+- [ ] Guardar les comandes exactes a `SETUP.md` — són la configuració, i s'han de poder repetir
 - [ ] **Porta:** push directe a `master` rebutjat; tag `v*` s'atura esperant aprovació
 
 ### Fase 5 — Primer desplegament real · *tots dos*
@@ -110,7 +117,7 @@ Aquest fitxer és `ansible/hellogh/PLAN.md`.
 
 | Fitxer | Per a què serveix aquí |
 |---|---|
-| `ansible/lockdebian/GITHUB.md` | **El document al qual respon tot això.** 13 seccions; les «§N» que se citen al pla són d'aquí |
+| `ansible/lockdebian/GITHUB.md` | **El document al qual respon tot això.** 14 seccions (§0–§13); les «§N» que se citen al pla són d'aquí. La **§0 «Decisions prèvies»** és el criteri que ordena tot el pla — vegeu «Les 20 decisions de la §0, aplicades a hellogh» |
 | `ansible/lockdebian/README.md` | El pipeline actual. §7 contracte de hooks, §11 contenidors autònoms, §12 proxy de ports |
 | `ansible/lockdebian/FRPS.md` | Muntatge del VPS (Caddy + frps). Context, no s'hi toca |
 | `ansible/lockdebian/inventories/remote.yaml` | **L'únic fitxer a modificar fora de `hellogh/`** (Part 2) |
@@ -161,6 +168,11 @@ Aquest fitxer és `ansible/hellogh/PLAN.md`.
    `ports: "${PORT:-8080}:8000"`, `env_file: [.env]`, `user: "${UID:-1000}:${GID:-1000}"`,
    `restart: unless-stopped`. Makefile amb `help setup test docker-build docker-test docker-up
    docker-down health clean`.
+8. **`gh` cobreix tota la configuració del repositori** (§2, decisió 20). El que no té comanda
+   pròpia — protecció de branques i environments — es fa amb `gh api`, que accepta els comodins
+   `{owner}` i `{repo}` i llegeix JSON de l'entrada estàndard amb `--input -`. Vegeu la Fase 4.
+   L'**única** operació de tot el projecte que segueix sent només web és canviar la visibilitat del
+   paquet a GHCR (Fase 5, pas 2); la CLI la sap llegir però no escriure.
 
 ### 0.5 Ja descartat — no ho tornis a proposar
 
@@ -169,7 +181,7 @@ Aquest fitxer és `ansible/hellogh/PLAN.md`.
 | Desplegar al VPS `<host-vps>` per SSH | Obligaria a obrir SSH entrant a la màquina que termina el TLS de tots els alumnes, amb un usuari al grup `docker` (= root efectiu) i una clau en mans de GitHub. El contenidor Incus ho evita tot |
 | Un playbook nou (`ghrunner.yaml`) | Restricció explícita de l'usuari: **cap script nou ni modificat** a lockdebian ni gitodebian. El runner s'instal·la a mà, un cop |
 | Exposar el SSH del contenidor amb un proxy TCP d'frp | Caldria modificar `conf/frpc.j2.toml` (`type = "http"` fix), que renderitza la config de **tots** els contenidors d'alumne |
-| Repositori privat | Perd *branch protection* i *environments* al pla Free (vegeu 0.3.1) |
+| Repositori privat | Perd *branch protection* i *environments* al pla Free (vegeu 0.4.1) |
 | Un `undeploy.yml` | L'usuari el va treure de l'abast. `COMPARISON.md` el llista com a «sense equivalent a GitHub» |
 | Incus **dins del VPS** | Replicaria la capa d'aïllament, però cal instal·lar Incus en un VPS que només té Caddy+frps, per una app d'un sol propietari |
 | Un `lxc_profiles` nou per a hellogh | Innecessari: els perfils es comparteixen (0.4.4) |
@@ -195,9 +207,13 @@ Substitueix `jgregor5` per `jgregor5` a tot el document quan escriguis els fitxe
    `docker/login-action` v4 (vegeu «Conformitat amb la pràctica del sector»). **Torna-ho a
    comprovar el dia que escriguis els workflows** i agafa el SHA complet de cada release — canvien
    sovint, i les del `GITHUB.md` (v4/v6/v3) ja són obsoletes.
+   > La **decisió 18** de la §0 tria «tag major (`@v4`)» i deixa el SHA complet per «si l'entorn ho
+   > exigeix». Aquí es tria el SHA: vegeu la taula de les 20 decisions i «Fixar les accions per SHA».
 5. **Com entra `<domini-app>` als workflows** — *Fase 0* (decisió) i *Fase 4* (aplicació). El domini
    real no s'escriu literalment al repositori públic: `deploy.yml` el llegeix de la variable de
    repositori `APP_DOMAIN`. Vegeu la nota a `INFRA.local.md`.
+6. **L'id numèric del revisor de l'environment** — *Fase 4*: `gh api users/jgregor5 --jq .id`.
+   L'API d'environments **no accepta el nom d'usuari**, només l'id (§8).
 
 ### 0.7 Convencions de documentació (per als `.md` en català a escriure)
 
@@ -358,8 +374,8 @@ alguna cosa, passa **aquí** i peta **allà**.
 > `type = "http"` fix i renderitza la config de **tots** els contenidors d'alumne — i posaria el
 > SSH d'un contenidor d'aula a internet.
 
-**Bonus de la mateixa decisió.** El blockquote de
-[`GITHUB.md:512`](../lockdebian/GITHUB.md) diu que el runner self-hosted és
+**Bonus de la mateixa decisió.** El blockquote de la
+[§12 de `GITHUB.md`](../lockdebian/GITHUB.md) diu que el runner self-hosted és
 *el mateix truc que FRP*. Al contenidor n'hi haurà **dos, de costat**:
 
 ```shell
@@ -404,6 +420,72 @@ Incus limita el dany a un contenidor d'un sol ús, que és exactament per a aix�
 | Idioma | **Català** | Coherent amb `README.md`/`GITHUB.md`: `# hellogh — Guia d'ús`, seccions numerades, diagrames ASCII, sense mermaid |
 | App | **Trivial a propòsit** | Cada minut en lògica d'aplicació és un minut no gastat en el concepte |
 
+### Les 20 decisions de la §0, aplicades a hellogh
+
+La §0 de `GITHUB.md` fa explícites les vint decisions que hi ha **abans** de qualsevol YAML, i diu
+la frase que ordena aquesta taula: *«si el motiu no aplica al vostre cas, la decisió tampoc»*.
+hellogh en segueix **disset** i en tria **tres** diferent, cada una amb el motiu al davant. La
+columna «≠» marca les divergències.
+
+| # | Decisió (§0.3) | Tria de `GITHUB.md` | Tria de hellogh | ≠ |
+|--:|---|---|---|:-:|
+| 1 | On corre l'aplicació | VPS únic amb Docker Compose | **Contenidor Incus** al host lockdebian, amb Docker Compose | |
+| 2 | Què és un *release* | Tag `v*` | Igual: tag `v*` anotat | |
+| 3 | Model de branques | Branca de feina → PR → `main` protegida | Igual, però la branca permanent es diu **`master`** (paral·lelisme amb lockdebian) | |
+| 4 | Què valida el CI | Build + tests a cada PR | Igual: `docker build --target test` + `docker run` | |
+| 5 | Quan corre el CI | PR i push a la branca permanent | Igual | |
+| 6 | Quin és l'artefacte | Imatge Docker | Igual | |
+| 7 | Com s'identifica l'artefacte | **Tag i SHA del commit** | Igual: `:v1.0.0` **i** `:sha-<commit>` | |
+| 8 | On viuen els artefactes | GHCR | Igual, i **públic** (l'exercici C el necessita) | |
+| 9 | Qui construeix la imatge | Build once, deploy many | Igual — i és la **idea 2** de tota la lliçó | |
+| 10 | Com arriba a producció | SSH des d'un runner de GitHub | **Runner self-hosted dins del contenidor** | ✅ |
+| 11 | Quants entorns | Només producció | Igual | |
+| 12 | Configuració i secrets de runtime | Injectats en execució, fora de l'artefacte | Igual: `.env` només amb `IMAGE_TAG`; la resta, defaults del `compose.yaml` | |
+| 13 | On viuen els secrets | Environment `production` (desplegament) + servidor (runtime) | **Cap de les dues meitats**: el runner ja és a dins, i l'app no té secrets de runtime. L'únic valor configurat és `APP_DOMAIN`, i és una **variable de repositori**, no un secret. Vegeu el «matís honest» | |
+| 14 | Aprovació de producció | Environment amb revisor opcional | **Revisor obligatori** — és l'exercici D | |
+| 15 | Rollback | Redesplegar el tag anterior | Igual: `gh workflow run deploy.yml -f tag=<anterior>` | |
+| 16 | Concurrència | Serialitzar sense cancel·lar | Igual | |
+| 17 | Permisos del workflow | Explícits, per job | Igual | |
+| 18 | Confiança en les actions | Tag major (`@v4`) | **SHA complet de 40 hex** + `dependabot.yml` | ✅ |
+| 19 | Comportament davant l'error | Cada pas defineix què passa si falla | Igual, amb **una excepció declarada**: si el smoke test falla, no hi ha rollback automàtic | |
+| 20 | Com es configura el repositori | CLI `gh` | Igual: tota la Fase 4 són comandes, cap clic | |
+
+**Les tres divergències, i per què:**
+
+- **Decisió 10 — runner self-hosted en comptes de SSH.** El motiu de `GITHUB.md` («el mínim
+  d'infraestructura pròpia») no aplica: el destí és un contenidor **darrere del NAT de l'institut**,
+  i un runner d'Azure no hi pot fer SSH. La pròpia §11 diu que aquest és exactament el cas en què
+  s'hi ha de recórrer. A canvi, s'hi guanya: cap clau de desplegament, cap port obert.
+- **Decisió 18 — SHA complet en comptes de tag major.** El motiu de `GITHUB.md` («el compromís
+  raonable») és d'abans dels incidents de cadena de subministrament del Q1 2026. `@v7` és una
+  etiqueta mutable; després de `tj-actions/changed-files` això ja no és acceptable en un repositori
+  que serveix d'exemple. Vegeu «Fixar les accions per SHA».
+- **Decisió 14 — revisor obligatori en comptes d'opcional.** La §0 diu «per un projecte d'aula,
+  opcional». Aquí és obligatori **precisament perquè és d'aula**: l'aprovació aturada és l'exercici
+  D, i si és opcional no hi ha res a veure.
+
+> **La decisió 3 mereix una nota.** `GITHUB.md` parla sempre de `main`; hellogh fa servir `master`
+> perquè és el que fan els repositoris de lockdebian i la comparació ha de tenir **una sola
+> variable**. És un canvi de nom, no de model: una sola branca permanent, la resta efímeres amb PR.
+> Allà on el pla cita «§N amb `main`», llegiu-hi `master`.
+
+### Què **no** decideix aquest pipeline (§0.5 aplicada a hellogh)
+
+La §0.5 delimita els temes que es resolen **al destí**, no al workflow. Per a hellogh la resposta és
+curta en gairebé tots, i val la pena dir-ho a classe en comptes de deixar-ho implícit — perquè el
+que fa que la llista sigui curta és que l'app és trivial **a posta**, no que els temes no existeixin.
+
+| Tema (§0.5) | A hellogh |
+|---|---|
+| Persistència | **Cap volum.** L'app no té estat: es pot destruir i recrear el contenidor sense perdre res |
+| Base de dades | **No n'hi ha.** Afegir-n'hi una és el primer que trencaria la simplicitat del rollback |
+| Còpies de seguretat | **No cal.** Tot l'estat recuperable és a GitHub (codi) i a GHCR (imatges) |
+| Migracions d'esquema | **No n'hi ha** — per això el rollback de la decisió 15 és sempre vàlid aquí. En un projecte real, no ho seria |
+| Límits de recursos | Els del perfil Incus `prjref-project` (2 CPU / 4 GB / 10 GB), no del `compose.yaml` |
+| Fronteres de xarxa | frpc només publica el **8080 del loopback** del contenidor. Res més surt |
+| Observabilitat | `docker compose logs` al contenidor i els logs del run a Actions. Res més |
+| Configuració del servidor | **Ansible, i és literalment lockdebian**: dues entrades a l'inventari (Part 2) |
+
 ---
 
 ## Part 1 — El repositori `hellogh/`
@@ -424,7 +506,7 @@ hellogh/
 ├── requirements.txt          # fastapi, uvicorn[standard], pytest, httpx
 ├── .dockerignore .gitignore .env.example
 ├── README.md                 # Guia d'ús
-├── SETUP.md                  # inventari + instal·lació del runner (5 passos)
+├── SETUP.md                  # inventari + runner + les comandes `gh api` de configuració
 ├── COMPARISON.md             # lockdebian ↔ GitHub, peça per peça
 └── LAB.md                    # els 5 exercicis (A–E) — el document que fa la classe
 ```
@@ -469,15 +551,25 @@ Caddy (<domini-comodí>)  ──▶  frps  ──▶  frpc dins del contenidor
 > resultat és un **502 sense cap error a cap log**. `PORT` només té sentit en local, per no xocar
 > amb un altre projecte.
 
-**2. El job `deploy` **sobreescriu** `.env`, no hi afegeix res.**
+**2. `.env` és propietat del desplegament: s'hi escriu amb `>`, i no hi ha res més.**
 
 ```shell
 printf 'IMAGE_TAG=%s\n' "$TAG" > .env      # `>`, mai `>>`
 ```
 
-Amb `>>` el fitxer aniria acumulant un `IMAGE_TAG` per desplegament. Compose es queda amb l'últim,
-o sigui que *sembla* que funciona fins que algú llegeix el fitxer i no entén res. `.env` al
-contenidor conté **només** `IMAGE_TAG`: tota la resta són els defaults del `compose.yaml`.
+Té dues cares, i totes dues fan mal:
+
+- **Amb `>>`** el fitxer aniria acumulant un `IMAGE_TAG` per desplegament. Compose es queda amb
+  l'últim, o sigui que *sembla* que funciona fins que algú llegeix el fitxer i no entén res.
+- **Amb `>`** — que és el correcte — el fitxer es **trunca sencer** a cada execució. Per tant
+  qualsevol cosa que algú hi hagi deixat a mà **desapareix al desplegament següent**, sense error i
+  sense avís. És exactament el descuit de la §0.4 que buida la decisió 12.
+
+La regla que se'n deriva, i que val per a qualsevol projecte: **`artefacte ≠ configuració ≠ dades`**.
+`.env` al contenidor conté **només la identitat de la imatge**; tota la resta són els defaults del
+`compose.yaml`. Si algun dia hellogh necessités configuració de runtime, **no aniria a `.env`**:
+aniria a un fitxer a part (`app.env`) que el workflow no toca mai i que el `compose.yaml` carrega
+amb `env_file:`. Aquesta és també la raó per la qual `PORT` no hi pot ser (invariant 1).
 
 **3. `user: "${UID:-1000}:${GID:-1000}"` cau al default sota el runner.**
 
@@ -496,6 +588,16 @@ fos, els fitxers del volum quedarien d'un altre propietari. En local, on `make` 
   `docker run --rm hellogh-test`
 
 Equivalent de `validate.sh` + `pre-deploy.sh` del contracte de hooks.
+
+> **Build + tests, i prou** (decisió 4). Lint, tipus, escaneig de dependències o de secrets són
+> candidats raonables, però cada check s'hi ha d'afegir el dia que eviti una classe d'error que ha
+> passat, no perquè surti als tutorials. En una app de dotze línies no n'hi ha cap que ho justifiqui.
+> **Cap check lent al PR**: el feedback útil més ràpid, primer.
+>
+> **Fer push a una branca de feina no executa res**, i convé dir-ho a classe abans que ho
+> descobreixin: `ci.yml` escolta `pull_request:` i `push: [master]`. La validació arrenca en
+> **obrir** el PR i es repeteix a cada push mentre estigui obert. El cicle complet és
+> `git switch -c … && git push -u origin … && gh pr create --base master && gh pr checks --watch`.
 
 ### Com viatja la imatge (el mecanisme central)
 
@@ -626,31 +728,76 @@ que mentrestant ha derivat. Aquí, l'artefacte que ha passat el CI és **exactam
 
 ### `deploy.yml`
 
-- `on: push: tags: ["v*"]` + `workflow_dispatch` (amb `inputs.tag`)
+- `on: push: tags: ["v*"]` + `workflow_dispatch` amb **`inputs.tag` `required: true`**
+- `permissions: {contents: read}` al capdamunt — el mínim; cada job hi afegeix el que li cal
 - `concurrency: {group: deploy, cancel-in-progress: false}`
-- **job `build`** — `runs-on: ubuntu-24.04`:
+- **job `build`** — `runs-on: ubuntu-24.04`, `timeout-minutes: 20`:
+  - **`if: github.event_name == 'push'`** — vegeu «El dispatch no reconstrueix res», més avall
   - `permissions: {contents: read, packages: write, id-token: write, attestations: write}`
     (els dos últims, per a les atestacions)
   - `docker/login-action` → `docker/metadata-action` (calcula tags i labels OCI) →
     `docker/build-push-action` amb `target: production`, `cache-from`/`cache-to: type=gha` (§10)
+  - **Dues etiquetes, no una** (decisió 7): `type=ref,event=tag` → `:v1.0.0` i
+    `type=sha,format=long` → `:sha-<40 hex>`. Vegeu «Per què el SHA també», més avall
   - **`actions/attest-build-provenance`** amb `subject-name: ghcr.io/jgregor5/hellogh` (**sense
     tag**) i `subject-digest: ${{ steps.build.outputs.digest }}`
-- **job `deploy`** — `needs: build`, **`runs-on: [self-hosted, hellogh]`**,
+- **job `deploy`** — **`runs-on: [self-hosted, hellogh]`**, `timeout-minutes: 10`,
   `permissions: {contents: read, packages: read}`,
-  `environment: {name: production, url: https://<domini-app>}`. Passos **locals**:
-  `docker login ghcr.io` amb `GITHUB_TOKEN` → escriure `IMAGE_TAG` a `.env` → `docker compose pull`
-  → `docker compose up -d --remove-orphans`. Cap SSH, cap secret de desplegament.
+  `environment: {name: production, url: https://${{ vars.APP_DOMAIN }}}`:
+  - `needs: build` + **`if: ${{ !cancelled() && needs.build.result != 'failure' }}`** — perquè en un
+    dispatch el `build` se salta i el `deploy` ha de continuar igualment
+  - `env: {IMAGE_TAG: "${{ inputs.tag || github.ref_name }}"}`
+  - `actions/checkout` amb **`ref: ${{ env.IMAGE_TAG }}`** — el `compose.yaml` ha de sortir del
+    mateix tag que la imatge, no de la punta de `master`
+  - Passos **locals**: `docker login ghcr.io` amb `GITHUB_TOKEN` → escriure `IMAGE_TAG` a `.env` →
+    `docker compose pull` → `docker compose up -d --remove-orphans`. Cap SSH, cap secret de
+    desplegament
 - **smoke test** final: 6 reintents × 5 s sobre `/health` verificant que `version` és el tag. És el
   `post-deploy.sh` de lockdebian, mateixa lògica.
 
+> **El dispatch no reconstrueix res** (decisió 9, i un dels set descuits de la §0.4). Un
+> redesplegament promou una imatge **ja publicada i ja validada**; si tornés a construir, el codi
+> seria el mateix però les dependències, les imatges base i la data no, i s'estaria desplegant un
+> artefacte que ningú ha vist mai. Per això el `build` porta `if: github.event_name == 'push'` i el
+> `deploy` ha de tolerar que el seu `needs:` estigui *skipped* — amb un `if:` normal, saltar el
+> `build` saltaria també el `deploy` i el botó de rollback no faria res.
+>
+> **`inputs.tag` és obligatori a posta.** Sense ell, un dispatch llançat des de `master` faria
+> `github.ref_name == 'master'`: es desplegaria `IMAGE_TAG=master`, que és una etiqueta **mutable** i
+> no diu quin codi està corrent. És l'altre descuit de la §0.4, i el que converteix el rollback en
+> una loteria.
+>
+> **Per què el SHA també** (decisió 7). En un `push` de tag, `github.ref_name` **és** el tag, així
+> que sembla que ja identifiqui la versió — i no ho fa: d'una imatge `:v1.0.0` no es pot arribar al
+> commit exacte que la va produir si algú ha mogut el tag. Amb la segona etiqueta `:sha-<commit>`,
+> sí. Producció corre `:v1.0.0`, que és el que llegeix una persona; l'auditoria fa servir el SHA.
+
+#### El rollback, decidit abans de necessitar-lo
+
+El descuit número set de la §0.4 és no decidir el rollback fins que cal: llavors es decideix amb
+producció caiguda i sota pressió. Aquí està decidit i escrit, i és la **decisió 15** tal qual —
+redesplegar el tag anterior, sense mecanisme nou:
+
+```shell
+git tag --sort=-creatordate | head      # quin era el bo
+gh workflow run deploy.yml -f tag=v0.9.0
+gh run watch
+```
+
+Torna a serialitzar-se amb `concurrency`, torna a passar per l'aprovació de l'environment i torna a
+comprovar `/health`. La imatge trencada continua existint a GHCR: no s'ha perdut res i es pot
+investigar amb calma. **Surt de franc perquè les imatges són immutables** (decisió 7) i perquè el
+dispatch no reconstrueix (decisió 9).
+
+L'excepció que la §5 Pas 5 remarca — una migració d'esquema destructiva deixa la imatge anterior
+sense saber llegir la base de dades — **aquí no aplica**: hellogh no té base de dades. En un
+projecte real sí que aplicaria, i és el motiu pel qual les migracions es fan compatibles cap enrere
+primer. Val la pena dir-ho a classe, perquè és l'única cosa que trenca aquest rollback tan net.
+
 > **Si el smoke test falla, el contenidor es queda amb la versió nova en marxa.** No hi ha rollback
-> automàtic, i és **a posta**: `undeploy` està fora d'abast (0.5) i un rollback automàtic amagaria
-> precisament el que la classe ha de veure. El remei és manual i és una demostració per si sol —
-> tornar a desplegar el tag bo:
-> ```shell
-> gh workflow run deploy.yml -f tag=v1.0.0     # el `redeploy` de lockdebian
-> ```
-> Val la pena dir-ho a classe: **el pipeline detecta la fallada, no la repara.** Distingir «el CI
+> **automàtic**, i és **a posta**: `undeploy` està fora d'abast (0.5) i un rollback automàtic
+> amagaria precisament el que la classe ha de veure. El remei és el d'aquí sobre, i és una
+> demostració per si sol. **El pipeline detecta la fallada, no la repara.** Distingir «el CI
 > t'avisa» de «el CI t'arregla» és part de la lliçó.
 
 > **L'atestació és la idea 2, però criptogràfica.** `gh attestation verify` demostra que aquella
@@ -712,7 +859,9 @@ Vegeu el job `build` a `deploy.yml`.
 
 #### On aquest disseny **se separa** de la pràctica, a posta
 
-La guia estàndard diu dues coses que aquest projecte no compleix. Cal dir-ho a classe, no amagar-ho:
+Aquestes dues són divergències respecte de la **pràctica del sector**, no respecte de les decisions
+de la §0 (aquelles són tres, i són a la taula de les 20 decisions). La guia estàndard diu dues coses
+que aquest projecte no compleix. Cal dir-ho a classe, no amagar-ho:
 
 | Guia del sector | Què fem aquí | Per què |
 |---|---|---|
@@ -807,7 +956,14 @@ Per netejar entre classes: `incus exec hellogh -- rm -rf /home/cicd/.hellogh-lab
 1. **Correspondències**: `cicd-trigger.sh` ↔ bloc `on:`; `cicd-router.sh` ↔ GitHub;
    **`cicd-worker.sh` ↔ `Runner.Worker`**; `validate.sh` ↔ `ci.yml`; `deploy.sh`+`post-deploy.sh` ↔
    `deploy.yml`; branca `production` ↔ tag + aprovació; `$CICD_SECRET_FILE` ↔ secrets
-   d'environment; verb `redeploy` ↔ `workflow_dispatch`; verbs `logs`/`follow` ↔ pestanya Actions.
+   d'environment; verb `redeploy` ↔ `workflow_dispatch -f tag=`; verbs `logs`/`follow` ↔
+   `gh run view --log` / `gh run watch`; **`ansible-playbook` ↔ `gh api`** (la configuració com a
+   fitxer que es pot rellegir i tornar a aplicar, no com a memòria de qui va clicar).
+   > **On es respon «què hi ha desplegat» canvia de lloc, i és una fila important.** A lockdebian és
+   > el capdamunt de la branca `production`, una referència de git que es pot mirar amb `git log`.
+   > Aquí no hi ha ni branca ni bot `cibot`: és l'historial de desplegaments de l'environment
+   > (`gh api repos/{owner}/{repo}/deployments`) i l'etiqueta de la imatge a GHCR. **Cap branca no
+   > ho registra.**
    > La correspondència `cicd-worker.sh` ↔ `Runner.Worker` és **la més precisa del projecte** i
    > mereix desenvolupar-se, no despatxar-se en una fila de taula: reprodueix aquí la subsecció
    > **«Com funciona l'agent per dins»** (diagrama Listener/Worker, `_work` persistent i la taula
@@ -815,9 +971,14 @@ Per netejar entre classes: `incus exec hellogh -- rm -rf /home/cicd/.hellogh-lab
 2. **Contracte**: 180 s per hook ↔ 360 min per job; sense python3/pip/sudo ↔ tot disponible; hooks
    seqüencials ↔ jobs paral·lels amb `needs:`.
 3. **Sense equivalent a GitHub**: `undeploy`, quota de disc, `usage`.
-4. **Sense equivalent a lockdebian**: pull requests com a porta, marketplace, registre d'imatges.
+4. **Sense equivalent a lockdebian**: pull requests com a porta, marketplace, registre d'imatges,
+   **rollback sense reconstruir** (a lockdebian tornar enrere vol dir tornar a construir el commit
+   antic en una màquina que mentrestant ha derivat; aquí és redesplegar una imatge que ja existeix).
 5. **El que NO canvia**: Incus, frpc, frps i Caddy, idèntics. Els **dos túnels sortints** de costat.
    I `/opt/cicd/cicd-worker.sh`, present i mai executat.
+6. **Les 20 decisions de la §0** i on hellogh se'n separa (10, 14 i 18). La taula ja és en aquest
+   pla; a `COMPARISON.md` hi va amb el motiu de cada divergència, perquè és el material que fa que
+   els alumnes puguin **prendre-les diferent** al seu projecte en comptes de copiar el YAML.
 
 `README.md` curt: què és, el cicle en 4 comandes, i com córrer-ho en local amb `make`.
 
@@ -876,7 +1037,7 @@ tots els scripts `cicd-*`. `lxcsetup-cicd.yaml` es pot executar sense problema (
 
 Sis fases. Cada una té una **porta de sortida** verificable: no es passa a la següent sense
 haver-la superat. La columna «Qui» importa perquè hi ha passos que **no puc fer jo**: els playbooks
-demanen contrasenya de `become` i el vault, i la configuració de GitHub és per web.
+demanen contrasenya de `become` i el vault, i el runner s'instal·la des del host.
 
 | Fase | Què | Qui | Porta de sortida |
 |---|---|---|---|
@@ -884,7 +1045,7 @@ demanen contrasenya de `become` i el vault, i la configuració de GitHub és per
 | **1** | Publicar a GitHub | jo (amb la teva autorització) | `ci.yml` verd a `master` |
 | **2** | Contenidor i xarxa | **tu** | el contenidor respon i el domini resol |
 | **3** | Runner self-hosted | **tu** (jo preparo les comandes) | el runner surt **Idle** |
-| **4** | Configuració de GitHub | **tu** (web) | environment i regla de branca actius |
+| **4** | Configuració de GitHub | jo (amb la teva autorització), **tot per CLI** | les **dues** proteccions actives i comprovades |
 | **5** | Primer desplegament real | tots dos | `/health` retorna `v1.0.0` |
 | **6** | Exercicis de classe | tu | els 5 exercicis reproduïbles |
 
@@ -972,22 +1133,96 @@ incus exec hellogh -- bash -c "cd /home/cicd/actions-runner && ./svc.sh install 
 Un cop instal·lat, **escriure `SETUP.md`** amb la versió real que s'ha fet servir (vegeu Fase 0,
 on s'ajorna a posta) i fer-ne commit.
 
-**Porta:** a *Settings → Actions → Runners* el runner surt **Idle**.
+**Porta:** el runner surt **`online`** i **`idle`**, comprovat per CLI:
 
-### Fase 4 — Configuració de GitHub (tu, per web)
+```shell
+gh api repos/{owner}/{repo}/actions/runners --jq '.runners[] | {name, status, busy, labels: [.labels[].name]}'
+```
 
-La CLI no ho fa tot; aquests tres passos són de la interfície web.
+### Fase 4 — Configuració de GitHub (jo, amb la teva autorització) — **tot per CLI**
 
-1. **Variable del domini** — això sí que es pot per CLI:
+Cap clic. La decisió 20 diu per què: un clic no es pot revisar, ni repetir, ni enganxar a un issue,
+ni posar en un script — i la configuració del repositori és infraestructura, igual que la del
+servidor. Les comandes d'aquesta fase van a `SETUP.md`, i muntar el repositori del grup següent
+deixa de dependre de recordar quinze caselles.
+
+**Són dues proteccions diferents** (§2), i cap no substitueix l'altra: la (a) controla què es pot
+**fusionar**, la (b) què es pot **desplegar**. Sense (a) es pot fusionar codi amb els tests
+vermells; sense (b), qualsevol branca de feina pot arribar a producció encara que `master` estigui
+blindada.
+
+1. **Variable del domini** (no és cap secret, però tampoc va al repositori públic):
    ```shell
    gh variable set APP_DOMAIN --body '<domini-app>'   # el valor real, de INFRA.local.md
    ```
-2. **Environment** — *Settings → Environments → New environment → `production`*:
-   *Required reviewers* (tu mateix serveix) i *Deployment branches and tags* = només `v*`.
-3. **Regla de branca** — *Settings → Rules → New ruleset* sobre `master`: exigir pull request i
-   el check `validate`.
-   > ⚠️ **El check `validate` només apareix a la llista si ja ha corregut alguna vegada.** Per això
-   > aquesta fase va després de la Fase 1. Si no el trobes, és que encara no has publicat.
+2. **Protecció (a): branch protection sobre `master`** — què es pot fusionar:
+   ```shell
+   gh api -X PUT repos/{owner}/{repo}/branches/master/protection --input - <<'JSON'
+   {
+     "required_status_checks": { "strict": true, "contexts": ["validate"] },
+     "required_pull_request_reviews": { "required_approving_review_count": 0 },
+     "enforce_admins": true,
+     "restrictions": null
+   }
+   JSON
+   ```
+   - `contexts` vol el nom del **job** (`validate`), no el del workflow (`CI`).
+   - L'API exigeix les quatre claus encara que no les vulguis; les que no s'usin van a `null`.
+   - `"strict": true` obliga la branca a estar al dia amb `master` abans de fusionar.
+   - `"enforce_admins": true` fa que la regla valgui **també per a tu**. A partir d'aquí, qualsevol
+     canvi a `master` — inclosa una correcció d'una coma al `README.md` — passa per un PR. És
+     incòmode i és la lliçó.
+   > ⚠️ **`required_approving_review_count` ha de ser `0` en aquest repositori.** `GITHUB.md` hi
+   > posa `1`, que és el correcte en un equip; aquí, amb un sol propietari, **ningú no pot aprovar
+   > el seu propi PR** i el resultat és que no es pot fusionar res mai. El que fa de porta és el
+   > check `validate`, que és justament el que ha de demostrar l'exercici A. Si algun dia hi
+   > afegeixes alumnes com a col·laboradors, puja'l a `1`.
+   >
+   > ⚠️ **El check `validate` només s'accepta com a obligatori si GitHub l'ha vist córrer alguna
+   > vegada.** Per això aquesta fase va després de la Fase 1. Comprovació:
+   > `gh api repos/{owner}/{repo}/commits/master/check-runs --jq '.check_runs[].name'`.
+3. **Protecció (b): environment `production`** — què es pot desplegar. El revisor s'identifica amb
+   l'**id numèric**, no amb el nom d'usuari:
+   ```shell
+   REVIEWER_ID=$(gh api users/jgregor5 --jq .id)
+
+   gh api -X PUT repos/{owner}/{repo}/environments/production --input - <<JSON
+   {
+     "wait_timer": 0,
+     "reviewers": [ { "type": "User", "id": $REVIEWER_ID } ],
+     "deployment_branch_policy": {
+       "protected_branches": false,
+       "custom_branch_policies": true
+     }
+   }
+   JSON
+
+   gh api -X POST repos/{owner}/{repo}/environments/production/deployment-branch-policies \
+     -f name='v*' -f type='tag'
+   ```
+   - El heredoc va **sense cometes** (`<<JSON`, no `<<'JSON'`) perquè `$REVIEWER_ID` s'expandeixi.
+   - `wait_timer: 0` desactiva l'espera obligatòria; la porta és el revisor.
+   - La política `v*` de tipus `tag` és el que impedeix que cap branca de feina desplegui.
+   - `"type"` pot ser `User` o `Team`. Amb alumnes col·laboradors, un `Team` és millor que una llista
+     de noms.
+   > **Per a l'exercici D cal decidir el `prevent_self_review`.** Amb un sol propietari, qui empeny
+   > el tag i qui l'aprova són la mateixa persona, i el job s'aprova sol: es veu la pausa, però no
+   > la **separació de rols**. Posant `"prevent_self_review": true` al mateix cos JSON, l'exercici
+   > és de veritat — a canvi que calgui una segona persona per desplegar res. **Decideix-ho abans
+   > de la Fase 5**, perquè condiciona qui ha de ser a l'aula el dia de la demostració.
+
+**Comprovar com ha quedat** — abans de donar la fase per bona:
+
+```shell
+gh api repos/{owner}/{repo}/branches/master/protection --jq '.required_status_checks.contexts'
+gh api repos/{owner}/{repo}/environments/production --jq '.protection_rules'
+gh api repos/{owner}/{repo}/environments/production/deployment-branch-policies --jq '.branch_policies[].name'
+```
+
+> **Per què protecció clàssica i no un *ruleset*.** Els rulesets són el mecanisme més nou i cobreixen
+> diversos repositoris amb una sola regla, però són més verbosos i **`gh ruleset` només els sap
+> llegir** (`list`, `view`, `check`): crear-ne un obliga igualment a `gh api -X POST … /rulesets`.
+> Per a un repositori sol, la protecció clàssica de dalt és més simple i es llegeix millor a classe.
 
 **Porta:** un push directe a `master` és rebutjat, i un tag `v*` s'atura esperant aprovació.
 
@@ -995,10 +1230,24 @@ La CLI no ho fa tot; aquests tres passos són de la interfície web.
 
 | # | Acció | Resultat esperat |
 |---|---|---|
-| 1 | `git tag -a v1.0.0 -m "…"` · `git push origin v1.0.0` | `deploy.yml` arrenca; el job `build` puja la imatge a GHCR |
-| 2 | **Comprovar la visibilitat del paquet a GHCR** (pendent 0.6.2) | si surt privat, *Package settings → Change visibility → Public*. **Irreversible** — i l'exercici C el necessita públic |
-| 3 | Aprovar el desplegament des de la web | el job `deploy` s'engega al runner del contenidor |
+| 1 | `git tag -a v1.0.0 -m "…"` · `git push origin v1.0.0` | `deploy.yml` arrenca; el job `build` puja la imatge a GHCR amb **dues etiquetes**: `:v1.0.0` i `:sha-<commit>` |
+| 2 | **Comprovar la visibilitat del paquet a GHCR** (pendent 0.6.2): `gh api user/packages/container/hellogh --jq .visibility` | si surt `private`, canviar-ho a *Package settings → Change visibility → Public*. **Irreversible**, i l'exercici C el necessita públic |
+| 3 | Aprovar el desplegament | el job `deploy` s'engega al runner del contenidor |
 | 4 | `curl https://<domini-app>/health` | `{"status":"healthy","version":"v1.0.0"}`, **per frpc → frps → Caddy, sense tocar el VPS** |
+
+L'aprovació del pas 3 també es fa per CLI, coherent amb la decisió 20:
+
+```shell
+gh run list --workflow deploy.yml --limit 1                 # agafar el <run-id>
+gh api repos/{owner}/{repo}/actions/runs/<run-id>/pending_deployments \
+  --jq '.[] | {environment: .environment.name, can_approve: .current_user_can_approve}'
+gh api -X POST repos/{owner}/{repo}/actions/runs/<run-id>/pending_deployments \
+  -f state=approved -f comment='v1.0.0' -F 'environment_ids[]=<env-id>'
+```
+
+> **El canvi de visibilitat del paquet és de les poques coses que segueixen sent només web.** La CLI
+> el sap **llegir** (pas 2) però no canviar. És l'excepció que confirma la decisió 20, i val la pena
+> assenyalar-la a classe: quan una operació només es pot clicar, no queda rastre de qui la va fer.
 
 **Porta:** `/health` retorna exactament el tag publicat. Aquí el pipeline ja és real de punta a punta.
 
@@ -1014,10 +1263,13 @@ Els cinc exercicis del `LAB.md`, ara que tota la maquinària funciona:
 | **D** | Un empeny el tag, **un altre** l'aprova | el job es queda **en pausa** |
 | **E** | `gh attestation verify oci://ghcr.io/jgregor5/hellogh:v1.0.0 --owner jgregor5` | procedència signada: repositori, workflow i commit |
 
-I les tres comprovacions que fan visible el disseny:
+I les comprovacions que fan visible el disseny:
 
 | Comanda | Demostra |
 |---|---|
 | `incus exec hellogh -- systemctl status frpc actions.runner.*` | **els dos túnels sortints de costat**, cap port obert |
 | `incus exec hellogh -- ls -l /opt/cicd/cicd-worker.sh` + `cat /var/log/cicd-worker.log` | hi és i **no s'ha executat mai**: la peça exacta que GitHub substitueix |
 | `gh workflow run deploy.yml -f tag=v1.0.0` · `gh run watch` · `gh run view --log` | `redeploy`, `follow` i `logs` de lockdebian (§6, §13) |
+| `gh workflow run deploy.yml -f tag=v0.9.0` i tornar a `v1.0.0` | **el rollback** (decisió 15): mateix workflow, tag anterior, cap build. I que el job `build` surt **skipped** — el dispatch promou, no reconstrueix |
+| `gh api repos/{owner}/{repo}/deployments --jq '.[0] \| {ref, created_at}'` | on es respon ara «què hi ha desplegat»: ja no és el capdamunt d'una branca `production`, és l'historial de l'environment |
+| `git push origin master` amb un canvi qualsevol | **rebutjat**: la protecció (a) val també per a l'administrador (`enforce_admins`) |
